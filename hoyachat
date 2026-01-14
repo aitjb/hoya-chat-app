@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hoya 小幫手</title>
+    <style>
+        /* 你的自訂樣式 */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Microsoft JhengHei', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 500px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .screen {
+            display: none;
+            background: white;
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .screen.active {
+            display: block;
+        }
+        
+        /* 更多樣式... */
+    </style>
+</head>
+<body>
+    <!-- 1. 登入畫面 -->
+    <div id="loginScreen" class="screen active">
+        <h1>Hoya 小幫手</h1>
+        <input type="text" id="userId" placeholder="請輸入您的 User ID">
+        <button onclick="handleLogin()">登入</button>
+    </div>
+    
+    <!-- 2. 驗證碼畫面 -->
+    <div id="verifyScreen" class="screen">
+        <h1>輸入驗證碼</h1>
+        <p>驗證碼已發送到您的 LINE</p>
+        <input type="text" id="verifyCode" placeholder="6位數驗證碼">
+        <button onclick="handleVerify()">確認</button>
+    </div>
+    
+    <!-- 3. 聊天畫面 -->
+    <div id="chatScreen" class="screen">
+        <div class="chat-header">
+            <h2>Hoya 小幫手</h2>
+            <button onclick="logout()">登出</button>
+        </div>
+        
+        <div id="messages" class="messages"></div>
+        
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="輸入訊息...">
+            <button onclick="sendMessage()">發送</button>
+        </div>
+    </div>
+
+    <script>
+        // API 配置
+        const API_BASE = 'https://aitjb.zeabur.app/webhook';
+        let currentUserId = '';
+        
+        // 1. 登入
+        async function handleLogin() {
+            const userId = document.getElementById('userId').value;
+            if (!userId) {
+                alert('請輸入 User ID');
+                return;
+            }
+            
+            try {
+                // 檢查用戶
+                const checkRes = await fetch(`${API_BASE}/check-user`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({userId})
+                });
+                const checkData = await checkRes.json();
+                
+                if (!checkData.exists) {
+                    alert('用戶不存在');
+                    return;
+                }
+                
+                // 發送驗證碼
+                const verifyRes = await fetch(`${API_BASE}/send-verification`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({userId})
+                });
+                const verifyData = await verifyRes.json();
+                
+                if (verifyData.success) {
+                    currentUserId = userId;
+                    // 開發模式：顯示驗證碼
+                    console.log('驗證碼:', verifyData.code);
+                    alert(`驗證碼已發送！\n開發模式：${verifyData.code}`);
+                    showScreen('verifyScreen');
+                }
+            } catch (error) {
+                console.error('登入失敗:', error);
+                alert('登入失敗，請稍後再試');
+            }
+        }
+        
+        // 2. 驗證驗證碼
+        async function handleVerify() {
+            const code = document.getElementById('verifyCode').value;
+            if (!code) {
+                alert('請輸入驗證碼');
+                return;
+            }
+            
+            try {
+                const res = await fetch(`${API_BASE}/verify-code`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        userId: currentUserId,
+                        code: code
+                    })
+                });
+                const data = await res.json();
+                
+                if (data.verified) {
+                    showScreen('chatScreen');
+                    addMessage('系統', '歡迎使用 Hoya 小幫手！');
+                } else {
+                    alert('驗證碼錯誤');
+                }
+            } catch (error) {
+                console.error('驗證失敗:', error);
+                alert('驗證失敗');
+            }
+        }
+        
+        // 3. 發送訊息
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+            
+            // 顯示用戶訊息
+            addMessage('我', message);
+            input.value = '';
+            
+            // 顯示載入中
+            const loadingId = addMessage('Hoya', '思考中...');
+            
+            try {
+                const res = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        userId: currentUserId,
+                        messages: [{
+                            role: 'user',
+                            content: message
+                        }]
+                    })
+                });
+                const data = await res.json();
+                
+                // 移除載入訊息，顯示 AI 回覆
+                removeMessage(loadingId);
+                
+                if (data.error) {
+                    addMessage('系統', data.error);
+                } else {
+                    addMessage('Hoya', data.message);
+                }
+            } catch (error) {
+                removeMessage(loadingId);
+                addMessage('系統', '發送失敗，請稍後再試');
+                console.error('發送訊息失敗:', error);
+            }
+        }
+        
+        // 輔助函數
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => {
+                s.classList.remove('active');
+            });
+            document.getElementById(screenId).classList.add('active');
+        }
+        
+        function addMessage(sender, text) {
+            const messagesDiv = document.getElementById('messages');
+            const messageId = Date.now();
+            const messageDiv = document.createElement('div');
+            messageDiv.id = `msg-${messageId}`;
+            messageDiv.className = sender === '我' ? 'message user' : 'message ai';
+            messageDiv.innerHTML = `
+                <div class="sender">${sender}</div>
+                <div class="text">${text}</div>
+            `;
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            return messageId;
+        }
+        
+        function removeMessage(messageId) {
+            const msg = document.getElementById(`msg-${messageId}`);
+            if (msg) msg.remove();
+        }
+        
+        function logout() {
+            currentUserId = '';
+            showScreen('loginScreen');
+            document.getElementById('messages').innerHTML = '';
+        }
+        
+        // Enter 鍵發送
+        document.addEventListener('DOMContentLoaded', () => {
+            const messageInput = document.getElementById('messageInput');
+            if (messageInput) {
+                messageInput.addEventListener('keypress', (e) => {
+                    if (e.key === 'Enter') {
+                        sendMessage();
+                    }
+                });
+            }
+        });
+    </script>
+</body>
+</html>

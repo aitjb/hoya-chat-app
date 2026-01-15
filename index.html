@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>夢想導航系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&display=swap');
+        
+        .font-display { font-family: 'Orbitron', sans-serif; }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0px) translateX(0px); }
+            25% { transform: translateY(-20px) translateX(10px); }
+            50% { transform: translateY(-10px) translateX(-10px); }
+            75% { transform: translateY(-15px) translateX(5px); }
+        }
+        
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(30px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        @keyframes pulse-glow {
+            0%, 100% { box-shadow: 0 0 20px rgba(34, 211, 238, 0.5); }
+            50% { box-shadow: 0 0 40px rgba(34, 211, 238, 0.8); }
+        }
+        
+        .animate-float { animation: float ease-in-out infinite; }
+        .animate-slideUp { animation: slideUp 0.6s ease-out; }
+        .animate-fadeIn { animation: fadeIn 0.4s ease-out; }
+        .animate-shimmer { animation: shimmer 3s ease-in-out infinite; }
+        .animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-indigo-900 via-purple-900 to-pink-900 min-h-screen overflow-hidden">
+    <div id="app"></div>
+
+    <script>
+        const API_BASE = 'https://aitjb.zeabur.app/webhook';
+        const LIFF_ID = '2008895134-rWpLv6lx';
+        
+        // 從 localStorage 恢復狀態
+        let screen = localStorage.getItem('screen') || 'login';
+        let userId = localStorage.getItem('userId') || '';
+        let lineUserId = '';  // LIFF 取得的 LINE User ID
+        let verifyCode = '';
+        let messages = [];
+        let input = '';
+        let isLoading = false;
+        let liffInitialized = false;
+        
+        // 保存狀態到 localStorage
+        function saveState() {
+            localStorage.setItem('screen', screen);
+            localStorage.setItem('userId', userId);
+        }
+        
+        // 清除狀態
+        function clearState() {
+            localStorage.removeItem('screen');
+            localStorage.removeItem('userId');
+        }
+        
+        // 初始化 LIFF
+        async function initLiff() {
+            try {
+                await liff.init({ liffId: LIFF_ID });
+                liffInitialized = true;
+                
+                if (liff.isLoggedIn()) {
+                    const profile = await liff.getProfile();
+                    lineUserId = profile.userId;
+                    console.log('LINE User ID:', lineUserId);
+                } else {
+                    liff.login();
+                }
+            } catch (err) {
+                console.error('LIFF 初始化失敗:', err);
+                alert('無法連接到 LINE，請確認在 LINE 中打開');
+            }
+        }
+
+        function render() {
+            const app = document.getElementById('app');
+            
+            let html = `
+                <div class="relative min-h-screen">
+                    <!-- 背景粒子 -->
+                    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+                        ${Array.from({length: 30}, (_, i) => `
+                            <div class="absolute rounded-full bg-cyan-400 opacity-30 animate-float"
+                                 style="left: ${Math.random()*100}%; top: ${Math.random()*100}%; 
+                                        width: ${Math.random()*4+1}px; height: ${Math.random()*4+1}px;
+                                        animation-duration: ${Math.random()*20+10}s;
+                                        animation-delay: ${Math.random()*5}s;">
+                            </div>
+                        `).join('')}
+                    </div>
+                    
+                    <!-- 網格背景 -->
+                    <div class="absolute inset-0 opacity-10" style="background-image: linear-gradient(to right, rgba(0, 255, 255, 0.3) 1px, transparent 1px), linear-gradient(to bottom, rgba(0, 255, 255, 0.3) 1px, transparent 1px); background-size: 50px 50px;"></div>
+                    
+                    <div class="relative z-10 min-h-screen flex items-center justify-center p-4">
+                        <div class="w-full max-w-md">
+                            ${screen === 'login' ? renderLogin() : ''}
+                            ${screen === 'verify' ? renderVerify() : ''}
+                            ${screen === 'register' ? renderRegister() : ''}
+                            ${screen === 'chat' ? renderChat() : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            app.innerHTML = html;
+            attachEventListeners();
+        }
+
+        function renderLogin() {
+            return `
+                <div class="backdrop-blur-xl bg-white/10 p-8 rounded-3xl shadow-2xl border border-purple-400/30 animate-slideUp">
+                    <div class="text-center mb-8">
+                        <div class="relative inline-block">
+                            <h1 class="text-5xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 mb-2 animate-pulse-glow">
+                                夢想導航員
+                            </h1>
+                            <div class="absolute inset-0 blur-xl bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 opacity-30 -z-10"></div>
+                        </div>
+                        <p class="text-purple-200 text-sm mt-4">請輸入您的會員 ID</p>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <input id="userId" type="text" placeholder="會員 ID" 
+                                   class="w-full px-6 py-4 bg-white/5 border-2 border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-cyan-400 transition text-center text-lg">
+                        </div>
+                        <button id="loginBtn" class="w-full py-4 bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 text-white font-bold rounded-xl hover:shadow-lg hover:shadow-purple-500/50 transition transform hover:scale-105">
+                            ${isLoading ? '處理中...' : '登入驗證'}
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderVerify() {
+            return `
+                <div class="backdrop-blur-xl bg-white/10 p-8 rounded-3xl shadow-2xl border border-purple-400/30 animate-slideUp">
+                    <div class="text-center mb-8">
+                        <h2 class="text-3xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-400 mb-4">
+                            驗證碼已發送
+                        </h2>
+                        <p class="text-purple-200 text-sm">請查看您的 LINE 訊息（開發模式：查看終端機）</p>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <input id="verifyCode" type="text" placeholder="輸入 6 位數驗證碼" maxlength="6"
+                               class="w-full px-6 py-4 bg-white/5 border-2 border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-cyan-400 transition text-center text-2xl tracking-widest">
+                        <button id="verifyBtn" class="w-full py-4 bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-bold rounded-xl">
+                            確認驗證
+                        </button>
+                        <button id="backBtn" class="w-full py-2 text-purple-300 text-sm hover:text-white transition">
+                            返回登入
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRegister() {
+            return `
+                <div class="backdrop-blur-xl bg-white/10 p-8 rounded-3xl shadow-2xl border border-purple-400/30 animate-slideUp">
+                    <div class="text-center mb-8">
+                        <h2 class="text-3xl font-display font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-pink-400 mb-4">
+                            歡迎加入
+                        </h2>
+                        <p class="text-purple-200 text-sm">完成註冊，開啟您的專屬旅程</p>
+                    </div>
+                    
+                    <div class="space-y-4">
+                        <input id="regName" type="text" placeholder="您的姓名"
+                               class="w-full px-6 py-4 bg-white/5 border-2 border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400">
+                        <input id="regLineId" type="text" placeholder="LINE ID"
+                               class="w-full px-6 py-4 bg-white/5 border-2 border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400">
+                        <input id="regEmail" type="email" placeholder="電子郵件（選填）"
+                               class="w-full px-6 py-4 bg-white/5 border-2 border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400">
+                        <button id="registerBtn" class="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-600 text-white font-bold rounded-xl">
+                            完成註冊
+                        </button>
+                        <button id="backBtn" class="w-full py-2 text-purple-300 text-sm hover:text-white transition">
+                            返回登入
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderChat() {
+            return `
+                <div class="h-[600px] backdrop-blur-xl bg-white/10 rounded-3xl shadow-2xl border border-purple-400/30 flex flex-col animate-slideUp">
+                    <div class="px-6 py-4 border-b border-purple-400/30 bg-gradient-to-r from-purple-500/20 to-pink-500/20 flex justify-between items-center">
+                        <div>
+                            <h3 class="text-lg font-bold text-white">夢想導航員</h3>
+                            <p class="text-xs text-purple-200">AI 智能助手</p>
+                        </div>
+                        <button onclick="handleLogout()" class="text-xs text-purple-200 hover:text-white transition">登出</button>
+                    </div>
+                    <div id="messages" class="flex-1 overflow-y-auto p-6 space-y-4">
+                        ${messages.map(msg => `
+                            <div class="flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fadeIn">
+                                <div class="max-w-[80%] px-5 py-3 rounded-2xl ${msg.role === 'user' ? 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white' : 'bg-white/10 text-white border border-purple-400/30'}">
+                                    <p class="text-sm">${msg.content}</p>
+                                </div>
+                            </div>
+                        `).join('')}
+                        ${isLoading ? '<div class="flex justify-start animate-fadeIn"><div class="bg-white/10 px-5 py-3 rounded-2xl border border-purple-400/30"><div class="flex gap-2"><div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce"></div><div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 150ms;"></div><div class="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style="animation-delay: 300ms;"></div></div></div></div>' : ''}
+                    </div>
+                    <div class="p-4 border-t border-purple-400/30">
+                        <div class="flex gap-2">
+                            <input id="chatInput" type="text" placeholder="輸入訊息..." class="flex-1 px-4 py-3 bg-white/5 border border-purple-400/50 rounded-xl text-white placeholder-purple-300/50 focus:outline-none focus:border-purple-400">
+                            <button id="sendBtn" class="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 text-white rounded-xl">發送</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function handleLogin() {
+            userId = document.getElementById('userId').value;
+            if (!userId) return;
+            
+            if (!liffInitialized || !lineUserId) {
+                alert('請在 LINE 中打開此頁面');
+                return;
+            }
+            
+            isLoading = true;
+            render();
+            
+            try {
+                // 查詢用戶是否存在
+                const res = await fetch(`${API_BASE}/check-user`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({userId, lineUserId})
+                });
+                const data = await res.json();
+                
+                if (data.exists) {
+                    // 發送驗證碼
+                    await fetch(`${API_BASE}/send-verification`, {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({userId, lineUserId})
+                    });
+                    screen = 'verify';
+                    saveState();
+                } else {
+                    screen = 'register';
+                    saveState();
+                }
+            } catch (err) {
+                alert('連接後端失敗！請確認網路連線');
+            }
+            
+            isLoading = false;
+            render();
+        }
+
+        async function handleVerify() {
+            verifyCode = document.getElementById('verifyCode').value;
+            if (verifyCode.length !== 6) return;
+            
+            screen = 'chat';
+            saveState();
+            messages = [{role: 'assistant', content: '歡迎回來！我是你的夢想導航員，有什麼我可以幫助你的嗎？✨'}];
+            render();
+        }
+
+        async function handleRegister() {
+            const name = document.getElementById('regName').value;
+            const lineId = document.getElementById('regLineId').value;
+            if (!name || !lineId) return;
+            
+            screen = 'chat';
+            saveState();
+            messages = [{role: 'assistant', content: `你好 ${name}！歡迎加入！我是你的夢想導航員，讓我們開始你的旅程吧！🚀`}];
+            render();
+        }
+
+        async function handleSend() {
+            const inputEl = document.getElementById('chatInput');
+            const text = inputEl.value.trim();
+            if (!text || isLoading) return;
+            
+            inputEl.value = '';
+            messages.push({role: 'user', content: text});
+            isLoading = true;
+            render();
+            
+            try {
+                const res = await fetch(`${API_BASE}/chat`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({userId, messages})
+                });
+                const data = await res.json();
+                messages.push({role: 'assistant', content: data.message});
+            } catch (err) {
+                messages.push({role: 'assistant', content: '抱歉，連接服務時發生錯誤。'});
+            }
+            
+            isLoading = false;
+            render();
+        }
+        
+        function handleLogout() {
+            clearState();
+            screen = 'login';
+            userId = '';
+            messages = [];
+            render();
+        }
+
+        function attachEventListeners() {
+            const loginBtn = document.getElementById('loginBtn');
+            const verifyBtn = document.getElementById('verifyBtn');
+            const registerBtn = document.getElementById('registerBtn');
+            const sendBtn = document.getElementById('sendBtn');
+            const backBtn = document.getElementById('backBtn');
+            
+            if (loginBtn) loginBtn.onclick = handleLogin;
+            if (verifyBtn) verifyBtn.onclick = handleVerify;
+            if (registerBtn) registerBtn.onclick = handleRegister;
+            if (sendBtn) sendBtn.onclick = handleSend;
+            if (backBtn) backBtn.onclick = () => { screen = 'login'; clearState(); render(); };
+            
+            const chatInput = document.getElementById('chatInput');
+            if (chatInput) {
+                chatInput.onkeypress = (e) => {
+                    if (e.key === 'Enter') handleSend();
+                };
+            }
+        }
+
+        // 初始化
+        initLiff().then(() => {
+            render();
+        });
+    </script>
+</body>
+</html>
